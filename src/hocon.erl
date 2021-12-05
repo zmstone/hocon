@@ -53,7 +53,8 @@ load(Filename0, Opts) ->
     Ctx = hocon_util:stack_multiple_push(CtxList, #{}),
     try
         Bytes = hocon_token:read(Filename),
-        Conf = transform(do_binary(Bytes, Ctx), Opts),
+        Map = do_binary(Bytes, Ctx),
+        Conf = transform(Map, Opts),
         {ok, apply_opts(Conf, Opts)}
     catch
         throw:Reason -> {error, Reason}
@@ -335,7 +336,9 @@ transform(#{?HOCON_T := object, ?HOCON_V := V}, Opts) ->
 
 do_transform([], Map, _Opts) -> Map;
 do_transform([{Key, Value} | More], Map, Opts) ->
-    do_transform(More, merge(hd(paths(hocon_token:value_of(Key))), unpack(Value, Opts), Map), Opts).
+    [KeyReal] = paths(hocon_token:value_of(Key)),
+    ValueReal = unpack(Value, Opts),
+    do_transform(More, merge(KeyReal, ValueReal, Map), Opts).
 
 unpack(#{?HOCON_T := object, ?HOCON_V := V} = O, #{format := richmap} = Opts) ->
     O#{?HOCON_V => do_transform(remove_nothing(V), #{}, Opts)};
@@ -361,9 +364,10 @@ paths(Key) when is_list(Key) ->
 
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
-        {ok, MVal} when is_map(MVal) ->
-            maps:put(Key, deep_merge(MVal, Val), Map);
-        _Other -> maps:put(Key, Val, Map)
+        {ok, MVal} ->
+            maps:put(Key, hocon_util:deep_value_merge(MVal, Val), Map);
+        _Other ->
+            maps:put(Key, Val, Map)
     end;
 merge(Key, Val, Map) -> maps:put(Key, Val, Map).
 
